@@ -1,52 +1,36 @@
 #[derive(Debug)]
 enum Token {
-    Keyword(String),
-    Identifier(String),
-    Number(i32),
-    Operator(String),
-    Semicolon,
-    Dot,
-    Parenthesis(char),
-    // 其他标记...
+    Keyword(String), // const, let...
+    Identifier(String), // function name, variable name...
+    Literal(String), // string, number, null, undefine, true, false...
+    Operator(String), // =, +, -, *, /...
+    Delimiter(String), // {, }, (, ), ;...
+    TemplateLiteral(String), // `...`
+    Arrow(String), // =>
+    Whitespace(String), // 空格, 换行符...
+    Deconstructor(String), // ...
 }
 
 enum State {
     Initial,
     Identifier,
-    Number,
-    Operator,
-    // 其他状态...
 }
 
 fn lex(input: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
-    let mut current_state = State::Initial;
-    let mut current_token = String::new();
+    let mut state = State::Initial;
+    let mut current = String::new();
+    let mut chars = input.chars().peekable();
 
-    for ch in input.chars() {
-        match current_state {
+    while let Some(&ch) = chars.peek() {
+        match state {
             State::Initial => {
-                current_state = State::Identifier;
+                
             },
             State::Identifier => {
-                if ch.is_alphabetic() {
-                    current_token.push(ch);
-                } else {
-                    tokens.push(Token::Identifier(current_token.clone()));
-                    current_token.clear();
-                    current_state = State::Operator;
-                }
+                
             },
-            State::Number => {
-                if ch.is_numeric() {
-                    current_token.push(ch);
-                } else {
-                    tokens.push(Token::Number(current_token.parse().unwrap()));
-                    current_token.clear();
-                    current_state = State::Initial;
-                }
-            },
-            // 其他状态的处理...
+            _ => {},
         }
     }
     tokens
