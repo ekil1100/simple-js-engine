@@ -1,11 +1,11 @@
 #[derive(Debug)]
 enum Token {
-    Identifier(String), // function name | variable name | let | const | etc...
-    Number(String),     // 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | _
-    Operator(String),   // = | + | - | * | / | etc...
-    Delimiter(String),  // { | } | ( | ) | ; | etc...
-    String(String),     // ' | "
-    Template(String),   // `
+    Identifier(String, Span), // function name | variable name | let | const | etc...
+    Number(String, Span),     // 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | _
+    Operator(String, Span),   // = | + | - | * | / | etc...
+    Delimiter(String, Span),  // { | } | ( | ) | ; | etc...
+    String(String, Span),     // ' | "
+    Template(String, Span),   // `
 }
 
 #[derive(Debug)]
@@ -18,61 +18,105 @@ enum State {
     String(String),
 }
 
+#[derive(Debug, Copy, Clone)]
+struct Position {
+    line: usize,
+    column: usize,
+}
+
+impl Position {
+    fn new(line: usize, column: usize) -> Self {
+        Self { line, column }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Span {
+    start: Position,
+    end: Position,
+}
+
+impl Span {
+    fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
+}
+
 fn lex(input: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
     let mut current = String::new();
     let mut chars = input.chars().peekable();
     let mut states: Vec<State> = vec![State::Initial];
+    let mut column: usize = 1;
+    let mut line: usize = 1;
+    let mut start = Position::new(line, column);
+
+    fn next_line(line: &mut usize, column: &mut usize) {
+        *line += 1;
+        *column = 0;
+    }
+
+    fn next_char(chars: &mut std::iter::Peekable<std::str::Chars>, column: &mut usize) {
+        chars.next();
+        *column += 1;
+    }
 
     while let Some(&ch) = chars.peek() {
         match states.last() {
-            Some(&State::Initial) => {
-                match ch {
-                    'a'..='z' | 'A'..='Z' | '_' => {
-                        states.push(State::Identifier);
-                    }
-                    '=' => {
-                        states.push(State::Operator);
-                        tokens.push(Token::Operator(ch.to_string()));
-                        chars.next();
-                        states.push(State::Initial);
-                    }
-                    '0'..='9' => {
-                        states.push(State::Number);
-                    }
-                    '.' | '(' | ')' | ';' | ',' | '{' | '}' | '[' | ']' | ':' => {
-                        states.push(State::Delimiter);
-                        tokens.push(Token::Delimiter(ch.to_string()));
-                        chars.next();
-                        states.push(State::Initial);
-                    }
-                    '\'' => {
-                        states.push(State::String("single_quote".to_string()));
-                        chars.next();
-                    }
-                    '"' => {
-                        states.push(State::String("double_quote".to_string()));
-                        chars.next();
-                    }
-                    '`' => {
-                        states.push(State::String("back_quote".to_string()));
-                        chars.next();
-                    }
-                    // ' ' | '\n' | '\t' => {
-                    //     chars.next();
-                    // },
-                    _ => {
-                        chars.next();
-                    }
+            Some(&State::Initial) => match ch {
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    start = Position::new(line, column);
+                    states.push(State::Identifier);
                 }
-            }
+                '=' | '+' | '-' | '*' | '/' => {
+                    start = Position::new(line, column);
+                    states.push(State::Operator);
+                    tokens.push(Token::Operator(ch.to_string(), Span::new(start, start)));
+                    next_char(&mut chars, &mut column);
+                    states.push(State::Initial);
+                }
+                '0'..='9' => {
+                    start = Position::new(line, column);
+                    states.push(State::Number);
+                }
+                '.' | '(' | ')' | ';' | ',' | '{' | '}' | '[' | ']' | ':' => {
+                    start = Position::new(line, column);
+                    states.push(State::Delimiter);
+                    tokens.push(Token::Delimiter(ch.to_string(), Span::new(start, start)));
+                    next_char(&mut chars, &mut column);
+                    states.push(State::Initial);
+                }
+                '\'' => {
+                    start = Position::new(line, column);
+                    states.push(State::String("single_quote".to_string()));
+                    next_char(&mut chars, &mut column);
+                }
+                '"' => {
+                    start = Position::new(line, column);
+                    states.push(State::String("double_quote".to_string()));
+                    next_char(&mut chars, &mut column);
+                }
+                '`' => {
+                    start = Position::new(line, column);
+                    states.push(State::String("back_quote".to_string()));
+                    next_char(&mut chars, &mut column);
+                }
+                '\n' => {
+                    next_line(&mut line, &mut column);
+                    next_char(&mut chars, &mut column);
+                }
+                _ => {
+                    next_char(&mut chars, &mut column);
+                }
+            },
             Some(&State::Identifier) => match ch {
                 'a'..='z' | 'A'..='Z' | '_' | '0'..='9' => {
                     current.push(ch);
-                    chars.next();
+                    next_char(&mut chars, &mut column);
                 }
                 _ => {
-                    tokens.push(Token::Identifier(current));
+                    let end = Position::new(line, column);
+                    tokens.push(Token::Identifier(current, Span::new(start, end)));
                     current = String::new();
                     states.push(State::Initial);
                 }
@@ -80,43 +124,47 @@ fn lex(input: &str) -> Vec<Token> {
             Some(&State::Number) => match ch {
                 '0'..='9' => {
                     current.push(ch);
-                    chars.next();
+                    next_char(&mut chars, &mut column);
                 }
                 '_' => {
-                    chars.next();
+                    next_char(&mut chars, &mut column);
                 }
                 _ => {
-                    tokens.push(Token::Number(current));
+                    let end = Position::new(line, column);
+                    tokens.push(Token::Number(current, Span::new(start, end)));
                     current = String::new();
                     states.push(State::Initial);
                 }
             },
             Some(&State::String(ref s)) => match ch {
                 '\'' if s == "single_quote" => {
-                    chars.next();
-                    tokens.push(Token::String(current));
+                    next_char(&mut chars, &mut column);
+                    let end = Position::new(line, column);
+                    tokens.push(Token::String(current, Span::new(start, end)));
                     current = String::new();
                     states.push(State::Initial);
                 }
                 '"' if s == "double_quote" => {
-                    chars.next();
-                    tokens.push(Token::String(current));
+                    next_char(&mut chars, &mut column);
+                    let end = Position::new(line, column);
+                    tokens.push(Token::String(current, Span::new(start, end)));
                     current = String::new();
                     states.push(State::Initial);
                 }
                 '`' if s == "back_quote" => {
-                    chars.next();
-                    tokens.push(Token::Template(current));
+                    next_char(&mut chars, &mut column);
+                    let end = Position::new(line, column);
+                    tokens.push(Token::Template(current, Span::new(start, end)));
                     current = String::new();
                     states.push(State::Initial);
                 }
                 _ => {
                     current.push(ch);
-                    chars.next();
+                    next_char(&mut chars, &mut column);
                 }
             },
             _ => {
-                chars.next();
+                next_char(&mut chars, &mut column);
             }
         }
     }
